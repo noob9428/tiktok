@@ -333,7 +333,7 @@ def make_preview(post):
 initialise_db()
 
 st.title("TikTok Trend Creator")
-st.caption("Find ideas, generate original TikTok concepts and approve them from your phone.")
+st.caption("Find trends, prepare creator prompts and use your existing ChatGPT subscription from your phone.")
 
 tabs = st.tabs(["📊 Dashboard", "🔎 Scan trends", "✨ Create post", "✅ Approval queue", "⚙️ Settings"])
 
@@ -356,7 +356,7 @@ with tabs[0]:
     <div class="safe-card">
     <b>Recommended workflow</b><br>
     1. Fetch UK trends. 2. Add relevant TikTok Creative Center trends.
-    3. Generate ideas. 4. Approve only the strongest. 5. Add the chosen TikTok sound inside TikTok.
+    3. Copy the prepared prompt into ChatGPT. 4. Approve only the strongest result. 5. Add the chosen sound inside TikTok.
     </div>
     """, unsafe_allow_html=True)
 
@@ -439,7 +439,12 @@ with tabs[1]:
         )
 
 with tabs[2]:
-    st.subheader("Generate a post concept")
+    st.subheader("Create with your ChatGPT subscription")
+    st.write(
+        "The app prepares a detailed prompt. Copy it, open ChatGPT, paste it and send. "
+        "No API key or separate AI bill is needed."
+    )
+
     trends_df = load_trends()
     trend_options = trends_df["trend"].drop_duplicates().tolist() if not trends_df.empty else []
     mode = st.radio("Trend input", ["Choose saved trend", "Type a trend"], horizontal=True)
@@ -455,44 +460,89 @@ with tabs[2]:
     tone = col2.selectbox("Tone", ["Funny", "Dry British satire", "Curious", "Helpful", "Surprising"])
     audience = col1.text_input("Audience", get_setting("audience", "UK adults aged 25–55"))
     duration = col2.slider("Length in seconds", 6, 30, 12)
-    avoid = st.text_input("Avoid", get_setting("avoid", "party-political claims, cruelty, copyrighted lyrics"))
+    avoid = st.text_input("Avoid", get_setting("avoid", "misinformation, cruelty, copyrighted lyrics and unsupported political claims"))
+    format_choice = st.selectbox("Post format", ["Single 9:16 image", "Short 9:16 video script", "Three-image carousel", "Talking-head script", "Faceless meme video"])
+    account_context = st.text_area(
+        "Optional account style",
+        value=get_setting("account_context", "British, realistic, funny and clever. Avoid obvious AI clickbait. Keep text inside TikTok-safe areas."),
+        height=90,
+    )
 
-    if st.button("Generate post", type="primary", use_container_width=True, disabled=not bool(trend.strip())):
-        post, generator_note = ai_post(trend.strip(), niche, tone, duration, audience, avoid)
-        st.session_state["generated_post"] = post
-        st.session_state["generated_meta"] = {"trend":trend.strip(), "niche":niche, "note":generator_note}
+    prompt = f"""Use current web search where necessary to check whether this trend is genuinely current before creating anything.
 
-    if "generated_post" in st.session_state:
-        post = st.session_state["generated_post"]
-        meta = st.session_state["generated_meta"]
-        st.caption(meta["note"])
-        st.text_input("Hook", value=post["hook"], key="edit_hook")
-        st.text_area("Concept", value=post["concept"], key="edit_concept")
-        st.text_area("On-screen text", value=post["onscreen_text"], key="edit_text")
-        st.text_area("Caption", value=post["caption"], key="edit_caption")
-        st.text_input("Hashtags", value=post["hashtags"], key="edit_hashtags")
-        st.text_area("Shot list", value=post["shot_list"], key="edit_shots")
+Create one original TikTok post based on this trend:
 
-        edited = {
-            "hook": st.session_state["edit_hook"],
-            "concept": st.session_state["edit_concept"],
-            "onscreen_text": st.session_state["edit_text"],
-            "caption": st.session_state["edit_caption"],
-            "hashtags": st.session_state["edit_hashtags"],
-            "shot_list": st.session_state["edit_shots"],
+TREND: {trend.strip() if trend else "[choose a trend]"}
+NICHE: {niche}
+FORMAT: {format_choice}
+TONE: {tone}
+TARGET AUDIENCE: {audience}
+TARGET LENGTH: {duration} seconds
+ACCOUNT STYLE: {account_context}
+AVOID: {avoid}
+
+Requirements:
+- Use British English.
+- Make it realistic, clever and suitable for TikTok rather than obvious AI clickbait.
+- Do not copy another creator's wording, concept, artwork or distinctive presentation.
+- Do not reproduce copyrighted lyrics.
+- Keep important text and faces away from the top and bottom 20% of a 9:16 frame.
+- Verify factual or political claims before including them.
+- Clearly label satire so it cannot reasonably be mistaken for genuine news.
+- Recommend a trending sound by description only; do not provide or reproduce copyrighted audio.
+- Prefer one strong idea over several weak alternatives.
+
+Return:
+1. Why the trend suits this account.
+2. The finished concept.
+3. A strong opening hook.
+4. Exact on-screen text.
+5. A timestamped shot list or precise image-generation description.
+6. Caption.
+7. Four to six relevant hashtags.
+8. A short safety/fact-check note.
+9. Then create the final 9:16 image immediately when the selected format requires an image.
+"""
+
+    st.text_area("Ready-made ChatGPT prompt", prompt, height=420)
+
+    import streamlit.components.v1 as components
+    prompt_json = json.dumps(prompt)
+    components.html(
+        f"""
+        <button id="copyButton" style="width:100%;min-height:46px;border:0;border-radius:12px;background:#fe2c55;color:white;font-size:16px;font-weight:700;">Copy prompt</button>
+        <script>
+          const promptText = {prompt_json};
+          const button = document.getElementById("copyButton");
+          button.addEventListener("click", async () => {{
+            try {{
+              await navigator.clipboard.writeText(promptText);
+              button.innerText = "Copied — now open ChatGPT";
+              setTimeout(() => button.innerText = "Copy prompt", 2500);
+            }} catch (error) {{
+              button.innerText = "Select and copy the prompt above";
+            }}
+          }});
+        </script>
+        """,
+        height=58,
+    )
+    st.link_button("Open ChatGPT", "https://chatgpt.com/", use_container_width=True, type="primary")
+    st.caption("On iPhone: press Copy prompt, open ChatGPT, start a new chat, press and hold in the message box, choose Paste, then send.")
+
+    st.divider()
+    st.subheader("Save this job to the queue")
+    if st.button("Save prompt to approval queue", use_container_width=True, disabled=not bool(trend and trend.strip())):
+        queued = {
+            "hook": f"ChatGPT job: {trend.strip()}",
+            "concept": prompt,
+            "onscreen_text": "Generate in ChatGPT using the saved prompt.",
+            "caption": "",
+            "hashtags": "",
+            "shot_list": "Copy prompt → Open ChatGPT → Paste → Generate → Review before posting.",
         }
-        preview = make_preview(edited)
-        st.image(preview, caption="9:16 planning preview with safe areas", use_container_width=True)
-        st.download_button(
-            "Download planning preview PNG",
-            data=preview,
-            file_name="tiktok_post_preview.png",
-            mime="image/png",
-            use_container_width=True,
-        )
-        if st.button("Save to approval queue", use_container_width=True):
-            save_post(meta["trend"], meta["niche"], edited)
-            st.success("Saved to the approval queue.")
+        save_post(trend.strip(), niche, queued)
+        st.success("Prompt saved to the approval queue.")
 
 with tabs[3]:
     st.subheader("Approval queue")
@@ -544,10 +594,17 @@ with tabs[4]:
         set_setting("avoid", saved_avoid)
         st.success("Settings saved.")
 
+    account_style = st.text_area(
+        "Default account style",
+        get_setting("account_context", "British, realistic, funny and clever. Avoid obvious AI clickbait. Keep text inside TikTok-safe areas."),
+    )
+    if st.button("Save account style", use_container_width=True):
+        set_setting("account_context", account_style)
+        st.success("Account style saved.")
+
     st.divider()
-    st.markdown("### Optional AI setup")
-    st.code('OPENAI_API_KEY = "your-key-here"\nOPENAI_MODEL = "gpt-5-mini"', language="toml")
-    st.caption("Place these values in Streamlit Community Cloud → App settings → Secrets. Never commit API keys to GitHub.")
+    st.markdown("### ChatGPT subscription workflow")
+    st.info("This edition does not call the OpenAI API. It prepares a prompt for you to paste into ChatGPT, so generation takes place through your normal ChatGPT account and its applicable usage limits.")
 
     st.markdown("### TikTok publishing")
     st.warning(
